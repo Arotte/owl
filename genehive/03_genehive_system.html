@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Genehive — System Visualisation</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0a09;color:#d3d1c7;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;overflow-x:hidden}
+
+/* ── PALETTE ── */
+:root{
+  --teal:#1D9E75;--teal-bg:#085041;--teal-light:#9FE1CB;--teal-glow:rgba(29,158,117,.25);
+  --purple:#7F77DD;--purple-bg:#26215C;--purple-light:#CECBF6;--purple-glow:rgba(127,119,221,.25);
+  --coral:#D85A30;--coral-bg:#712B13;--coral-light:#F5C4B3;--coral-glow:rgba(216,90,48,.25);
+  --amber:#EF9F27;--amber-bg:#412402;--amber-light:#FAC775;--amber-glow:rgba(239,159,39,.3);
+  --pink:#D4537E;--pink-bg:#72243E;--pink-light:#F4C0D1;--pink-glow:rgba(212,83,126,.25);
+  --red:#E24B4A;--red-bg:#501313;--red-light:#F7C1C1;
+  --gray:#888780;--gray-bg:#2C2C2A;--gray-light:#D3D1C7;
+  --bg-card:#131312;--bg-surface:#1a1a18;--border:rgba(255,255,255,.08);
+}
+
+/* ── LAYOUT ── */
+.container{max-width:1280px;margin:0 auto;padding:32px 24px 64px}
+header{text-align:center;margin-bottom:48px}
+header h1{font-size:32px;font-weight:600;letter-spacing:-.02em;color:#e8e6de;margin-bottom:4px}
+header h1 span{color:var(--amber)}
+header .sub{font-size:14px;color:var(--gray);margin-bottom:16px}
+header .tags{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+header .tag{font-size:11px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);color:var(--gray-light);background:var(--bg-surface)}
+
+/* ── SECTION ── */
+.section{margin-bottom:48px}
+.section-title{font-size:13px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--gray);margin-bottom:16px;padding-left:2px}
+
+/* ── SVG SHARED ── */
+svg{display:block}
+svg text{font-family:inherit}
+.node-label{font-size:11px;font-weight:500;fill:#e8e6de}
+.node-sub{font-size:9px;fill:var(--gray)}
+.edge{fill:none;stroke-width:1.5}
+.edge-dashed{stroke-dasharray:6 4}
+
+/* ── AGENT CARDS ── */
+.agents-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px}
+.agent-card{background:var(--bg-surface);border-radius:12px;padding:14px;border:1px solid var(--border);transition:border-color .2s,box-shadow .2s;cursor:default}
+.agent-card:hover{border-color:var(--glow-color,var(--border));box-shadow:0 0 20px var(--glow-shadow,transparent)}
+.agent-card .name{font-size:15px;font-weight:600;margin-bottom:2px}
+.agent-card .role{font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.agent-card .desc{font-size:11px;color:var(--gray);line-height:1.5}
+.agent-card .nature{display:inline-block;font-size:9px;padding:2px 7px;border-radius:4px;margin-top:8px;font-weight:500}
+
+/* ── INFO PANELS ── */
+.info-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.info-panel{background:var(--bg-surface);border-radius:12px;padding:16px;border:1px solid var(--border)}
+.info-panel .panel-title{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px}
+.info-panel .item{font-size:11px;color:var(--gray);line-height:1.6;margin-bottom:6px}
+.info-panel .item b{color:var(--gray-light);font-weight:500}
+
+/* ── EVAL SCHEDULE ── */
+.eval-stages{display:flex;flex-direction:column;gap:8px}
+.eval-stage{border-radius:10px;padding:10px 14px;border:1px solid;transition:transform .15s}
+.eval-stage:hover{transform:translateX(4px)}
+.eval-stage .stage-name{font-size:12px;font-weight:600}
+.eval-stage .stage-desc{font-size:10px;opacity:.7;margin-top:2px}
+.eval-stage .stage-trigger{font-size:10px;color:var(--amber);margin-top:4px}
+
+/* ── CLI COMMANDS ── */
+.cli-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.cli-cmd{background:var(--bg-surface);border-radius:8px;padding:10px 14px;border:1px solid var(--border);font-family:"SF Mono",Consolas,monospace}
+.cli-cmd .cmd{font-size:12px;color:var(--teal-light);font-weight:500}
+.cli-cmd .explain{font-size:10px;color:var(--gray);margin-top:4px}
+
+/* ── ANIMATIONS ── */
+@keyframes flowUp{to{stroke-dashoffset:-30}}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.8;transform:scale(1.08)}}
+@keyframes glow{0%,100%{filter:drop-shadow(0 0 0 transparent)}50%{filter:drop-shadow(0 0 8px var(--amber-glow))}}
+@keyframes orbit{0%{transform:rotate(0deg) translateX(140px) rotate(0deg)}100%{transform:rotate(360deg) translateX(140px) rotate(-360deg)}}
+@media(prefers-reduced-motion:no-preference){
+  .anim-flow{animation:flowUp 2s linear infinite}
+  .anim-pulse{animation:pulse 2.5s ease-in-out infinite}
+  .anim-glow{animation:glow 3s ease-in-out infinite}
+}
+
+/* ── TOOLTIP ── */
+.tooltip{position:fixed;z-index:100;background:#1e1e1c;border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:11px;color:var(--gray-light);max-width:260px;pointer-events:none;opacity:0;transition:opacity .15s;box-shadow:0 8px 32px rgba(0,0,0,.5);line-height:1.5}
+.tooltip.visible{opacity:1}
+
+/* ── COMPARISON TABLE ── */
+.compare-table{width:100%;border-collapse:collapse;font-size:11px}
+.compare-table th{text-align:left;padding:8px 10px;color:var(--gray);font-weight:500;border-bottom:1px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.compare-table td{padding:7px 10px;border-bottom:1px solid var(--border);color:var(--gray-light)}
+.compare-table tr:hover td{background:rgba(255,255,255,.02)}
+.compare-table .col-naive{color:var(--gray)}
+.compare-table .col-auto{color:var(--coral-light)}
+.compare-table .col-gene{color:var(--teal-light)}
+
+/* ── RESPONSIVE ── */
+@media(max-width:640px){
+  .agents-grid{grid-template-columns:1fr 1fr}
+  .info-row{grid-template-columns:1fr}
+  header h1{font-size:24px}
+}
+</style>
+</head>
+<body>
+<div class="tooltip" id="tip"></div>
+
+<div class="container">
+
+<!-- ════════ HEADER ════════ -->
+<header>
+  <h1>Gene<span>hive</span></h1>
+  <div class="sub">Autonomous codebase evolution using AI agents — gene pool meets hive mind</div>
+  <div class="tags">
+    <span class="tag">genetic algorithm</span>
+    <span class="tag">island model</span>
+    <span class="tag">LLM agents</span>
+    <span class="tag">eval curriculum</span>
+    <span class="tag">git worktrees</span>
+  </div>
+</header>
+
+<!-- ════════ ARCHITECTURE GRAPH ════════ -->
+<div class="section">
+  <div class="section-title">System Architecture</div>
+  <svg id="arch-graph" width="100%" viewBox="0 0 1000 520" style="max-width:1000px;margin:0 auto">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <path d="M1 1L9 5L1 9" fill="none" stroke="context-stroke" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+      <filter id="glow-teal"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#1D9E75" flood-opacity=".3"/></filter>
+      <filter id="glow-purple"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#7F77DD" flood-opacity=".3"/></filter>
+      <filter id="glow-coral"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#D85A30" flood-opacity=".3"/></filter>
+      <filter id="glow-amber"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#EF9F27" flood-opacity=".4"/></filter>
+      <filter id="glow-pink"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#D4537E" flood-opacity=".3"/></filter>
+      <filter id="glow-red"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#E24B4A" flood-opacity=".3"/></filter>
+    </defs>
+
+    <!-- Background subtle grid -->
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,.02)" stroke-width="0.5"/>
+    </pattern>
+    <rect width="1000" height="520" fill="url(#grid)"/>
+
+    <!-- ── WALLACE (center top) ── -->
+    <g class="arch-node" data-tip="Wallace — the orchestrator. Reads Fossil, makes all strategic decisions: who mutates, who breeds, when Hermes fires, when to unlock next eval stage. The brain of Genehive.">
+      <rect x="410" y="30" width="180" height="64" rx="14" fill="#26215C" stroke="#534AB7" stroke-width="1.5" filter="url(#glow-purple)"/>
+      <text x="500" y="55" text-anchor="middle" class="node-label" style="font-size:14px" fill="#CECBF6">Wallace</text>
+      <text x="500" y="72" text-anchor="middle" class="node-sub" fill="#AFA9EC">orchestrator · all decisions</text>
+    </g>
+
+    <!-- ── FOSSIL (right) ── -->
+    <g class="arch-node" data-tip="Fossil — the passive historian. SQLite database recording every experiment: genome hash, eval output, scores, diffs, lineage. Never signals, never decides — just records. Wallace reads it to make decisions.">
+      <rect x="740" y="30" width="160" height="64" rx="14" fill="#2C2C2A" stroke="#5F5E5A" stroke-width="1.5"/>
+      <text x="820" y="55" text-anchor="middle" class="node-label" fill="#D3D1C7">Fossil</text>
+      <text x="820" y="72" text-anchor="middle" class="node-sub" fill="#888780">historian · passive log</text>
+    </g>
+
+    <!-- Wallace → Fossil (reads) -->
+    <path d="M590 62 L735 62" fill="none" stroke="#5F5E5A" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#ah)"/>
+    <text x="662" y="55" text-anchor="middle" style="font-size:9px;fill:#888780">reads</text>
+
+    <!-- ── MENDEL (left) ── -->
+    <g class="arch-node" data-tip="Mendel — the mutator. Receives a genome from Wallace, makes exactly one targeted change via Cursor CLI, and returns the mutated genome. Named after the monk who discovered inheritance.">
+      <rect x="80" y="190" width="160" height="64" rx="14" fill="#085041" stroke="#1D9E75" stroke-width="1.5" filter="url(#glow-teal)"/>
+      <text x="160" y="215" text-anchor="middle" class="node-label" fill="#9FE1CB">Mendel</text>
+      <text x="160" y="232" text-anchor="middle" class="node-sub" fill="#5DCAA5">mutator · one change</text>
+    </g>
+
+    <!-- ── CUPID (left-center) ── -->
+    <g class="arch-node" data-tip="Cupid — the crossover agent. Reads two high-performing parent genomes and intelligently breeds a child that combines the best of both. The LLM understands WHY each parent works — something classical genetic algorithms can't do.">
+      <rect x="280" y="190" width="160" height="64" rx="14" fill="#72243E" stroke="#D4537E" stroke-width="1.5" filter="url(#glow-pink)"/>
+      <text x="360" y="215" text-anchor="middle" class="node-label" fill="#F4C0D1">Cupid</text>
+      <text x="360" y="232" text-anchor="middle" class="node-sub" fill="#ED93B1">crossover · breed</text>
+    </g>
+
+    <!-- ── REAPER (right-center) ── -->
+    <g class="arch-node" data-tip="Reaper — the evaluator. Runs eval commands, interprets the raw output (logs, JSON, text), and makes a binary decision: cull or keep. An LLM agent, not a simple comparator — understands error profiles and trends.">
+      <rect x="540" y="190" width="160" height="64" rx="14" fill="#501313" stroke="#E24B4A" stroke-width="1.5" filter="url(#glow-red)"/>
+      <text x="620" y="215" text-anchor="middle" class="node-label" fill="#F7C1C1">Reaper</text>
+      <text x="620" y="232" text-anchor="middle" class="node-sub" fill="#E8A0A0">evaluator · cull or keep</text>
+    </g>
+
+    <!-- ── HERMES (far right) ── -->
+    <g class="arch-node" data-tip="Hermes — the migrator (island topology only). Carries the fittest genome from a converged island to another, injecting diversity. Fires rarely — the isolation between islands is the feature.">
+      <rect x="760" y="190" width="160" height="64" rx="14" fill="#412402" stroke="#EF9F27" stroke-width="1.5" filter="url(#glow-amber)"/>
+      <text x="840" y="215" text-anchor="middle" class="node-label" fill="#FAC775">Hermes</text>
+      <text x="840" y="232" text-anchor="middle" class="node-sub" fill="#D4A44F">migrator · island bridge</text>
+    </g>
+
+    <!-- ── GENOME (center) ── -->
+    <g class="arch-node" data-tip="The Genome — the thing being optimised. An entire code repository (not just one file). Stored as git commits. Mendel edits it, Cupid splices two, Reaper evaluates the result.">
+      <circle cx="360" cy="370" r="44" fill="#04342C" stroke="#5DCAA5" stroke-width="2"/>
+      <text x="360" y="366" text-anchor="middle" class="node-label" fill="#9FE1CB">Genome</text>
+      <text x="360" y="382" text-anchor="middle" class="node-sub" fill="#5DCAA5">code repo</text>
+    </g>
+
+    <!-- ── PHENOTYPE (right center) ── -->
+    <g class="arch-node" data-tip="The Phenotype — the running result of executing the genome. This is what Reaper actually evaluates. The genome is the blueprint; the phenotype is the expressed system.">
+      <circle cx="620" cy="370" r="44" fill="#2a1008" stroke="#D85A30" stroke-width="2"/>
+      <text x="620" y="366" text-anchor="middle" class="node-label" fill="#F5C4B3">Phenotype</text>
+      <text x="620" y="382" text-anchor="middle" class="node-sub" fill="#D85A30">running system</text>
+    </g>
+
+    <!-- ── p0 (bottom center) ── -->
+    <g class="arch-node" data-tip="p0 — the primordial genome, the root commit. Where all evolution begins. Also called Pangea conceptually — the single unified state before islands diverge.">
+      <circle cx="160" cy="460" r="30" fill="#2C2C2A" stroke="#888780" stroke-width="2"/>
+      <text x="160" y="457" text-anchor="middle" class="node-label" fill="#D3D1C7" style="font-size:13px">p0</text>
+      <text x="160" y="473" text-anchor="middle" class="node-sub" fill="#888780">seed</text>
+    </g>
+
+    <!-- ── EVAL COMMANDS (bottom right) ── -->
+    <g class="arch-node" data-tip="Eval Commands — provided by the developer. Just shell commands that run evaluations. Reaper runs them and interprets the output. The only interface between Genehive and the outside world.">
+      <rect x="730" y="340" width="170" height="56" rx="10" fill="var(--bg-surface)" stroke="#854F0B" stroke-width="1" stroke-dasharray="4 4"/>
+      <text x="815" y="364" text-anchor="middle" class="node-label" fill="#FAC775" style="font-size:11px">eval commands</text>
+      <text x="815" y="380" text-anchor="middle" class="node-sub" fill="#888780">developer-provided</text>
+    </g>
+
+    <!-- ── CURSOR CLI (bottom left) ── -->
+    <g class="arch-node" data-tip="Execution Engine — Cursor CLI (or Claude Code). Mendel and Cupid don't touch files directly; they invoke the coding agent as a subprocess. Genehive is the orchestration layer on top.">
+      <rect x="60" y="340" width="170" height="56" rx="10" fill="var(--bg-surface)" stroke="#1D9E75" stroke-width="1" stroke-dasharray="4 4"/>
+      <text x="145" y="364" text-anchor="middle" class="node-label" fill="#9FE1CB" style="font-size:11px">Cursor CLI</text>
+      <text x="145" y="380" text-anchor="middle" class="node-sub" fill="#888780">execution engine</text>
+    </g>
+
+    <!-- ═══ EDGES ═══ -->
+    <!-- Wallace → Mendel -->
+    <path d="M440 94 C380 140 230 160 200 186" fill="none" stroke="#534AB7" stroke-width="1.5" marker-end="url(#ah)" class="anim-flow" stroke-dasharray="7 4"/>
+    <text x="310" y="132" text-anchor="middle" style="font-size:9px;fill:#AFA9EC">instruct</text>
+
+    <!-- Wallace → Cupid -->
+    <path d="M470 94 C430 140 380 160 365 186" fill="none" stroke="#534AB7" stroke-width="1.5" marker-end="url(#ah)" class="anim-flow" stroke-dasharray="7 4"/>
+
+    <!-- Wallace → Reaper -->
+    <path d="M530 94 C570 140 600 160 610 186" fill="none" stroke="#534AB7" stroke-width="1.5" marker-end="url(#ah)" class="anim-flow" stroke-dasharray="7 4"/>
+
+    <!-- Wallace → Hermes -->
+    <path d="M580 50 C650 40 720 80 800 186" fill="none" stroke="#534AB7" stroke-width="1.2" stroke-dasharray="5 5" marker-end="url(#ah)"/>
+    <text x="710" y="100" text-anchor="middle" style="font-size:9px;fill:#AFA9EC">trigger</text>
+
+    <!-- Mendel → Genome -->
+    <path d="M200 254 C240 300 310 330 340 326" fill="none" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#ah)"/>
+    <text x="250" y="296" text-anchor="middle" style="font-size:9px;fill:#5DCAA5">mutate</text>
+
+    <!-- Cupid → Genome -->
+    <path d="M360 254 L360 322" fill="none" stroke="#D4537E" stroke-width="1.5" marker-end="url(#ah)"/>
+    <text x="375" y="292" style="font-size:9px;fill:#ED93B1">splice</text>
+
+    <!-- Genome → Phenotype -->
+    <path d="M404 370 L572 370" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#ah)"/>
+    <text x="488" y="362" text-anchor="middle" style="font-size:9px;fill:#888780">run</text>
+
+    <!-- Reaper → Phenotype -->
+    <path d="M620 254 L620 322" fill="none" stroke="#E24B4A" stroke-width="1.5" marker-end="url(#ah)"/>
+    <text x="636" y="296" style="font-size:9px;fill:#E8A0A0">score</text>
+
+    <!-- Reaper → Eval Commands -->
+    <path d="M700 222 L735 342" fill="none" stroke="#854F0B" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#ah)"/>
+
+    <!-- Cursor CLI → Genome -->
+    <path d="M215 368 L312 368" fill="none" stroke="#1D9E75" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#ah)"/>
+
+    <!-- p0 → Genome -->
+    <path d="M185 442 C230 420 300 410 335 395" fill="none" stroke="#888780" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#ah)"/>
+    <text x="240" y="430" style="font-size:9px;fill:#888780">initial</text>
+
+    <!-- Reaper → Wallace (feedback) -->
+    <path d="M580 190 C560 150 540 120 530 94" fill="none" stroke="#E24B4A" stroke-width="1" stroke-dasharray="3 4" marker-end="url(#ah)"/>
+    <text x="568" y="142" style="font-size:8px;fill:#E8A0A0">report</text>
+
+    <!-- All → Fossil (everything logged) -->
+    <path d="M660 370 C720 380 780 370 810 340" fill="none" stroke="#5F5E5A" stroke-width="0.8" stroke-dasharray="3 4" opacity=".4"/>
+    <path d="M500 94 C600 100 750 80 800 80" fill="none" stroke="#5F5E5A" stroke-width="0.8" stroke-dasharray="3 4" opacity=".4"/>
+
+    <!-- Hermes arrows between islands (conceptual) -->
+    <path d="M840 254 C840 290 840 310 840 335" fill="none" stroke="#EF9F27" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#ah)" opacity=".5"/>
+    <text x="858" y="300" style="font-size:8px;fill:#EF9F27">migrate</text>
+
+    <!-- Legend -->
+    <g transform="translate(60,490)">
+      <text style="font-size:9px;fill:#888780">Solid arrows = data flow · Dashed arrows = control signals · Animated = hot path</text>
+    </g>
+  </svg>
+</div>
+
+<!-- ════════ AGENTS ════════ -->
+<div class="section">
+  <div class="section-title">Agent Cast</div>
+  <div class="agents-grid">
+    <div class="agent-card" style="--glow-color:#534AB7;--glow-shadow:rgba(83,74,183,.2)">
+      <div class="name" style="color:#CECBF6">Wallace</div>
+      <div class="role" style="color:#AFA9EC">orchestrator</div>
+      <div class="desc">Selection pressure, population management, island control. Reads Fossil, decides who mutates, who breeds, when Hermes fires, when to unlock the next eval stage. All strategic decisions.</div>
+      <div class="nature" style="background:#26215C;color:#CECBF6;border:1px solid #534AB7">LLM agent</div>
+    </div>
+    <div class="agent-card" style="--glow-color:#1D9E75;--glow-shadow:rgba(29,158,117,.2)">
+      <div class="name" style="color:#9FE1CB">Mendel</div>
+      <div class="role" style="color:#5DCAA5">mutator</div>
+      <div class="desc">Edits the genome one targeted change at a time. Invoked via Cursor CLI as a subprocess. Named after the monk who discovered inheritance by obsessively breeding peas.</div>
+      <div class="nature" style="background:#085041;color:#9FE1CB;border:1px solid #1D9E75">Cursor CLI</div>
+    </div>
+    <div class="agent-card" style="--glow-color:#D4537E;--glow-shadow:rgba(212,83,126,.2)">
+      <div class="name" style="color:#F4C0D1">Cupid</div>
+      <div class="role" style="color:#ED93B1">crossover</div>
+      <div class="desc">Reads two high-performing parent genomes and breeds a child combining the best of both. The LLM understands <em>why</em> each parent works — classical GAs can't do this.</div>
+      <div class="nature" style="background:#72243E;color:#F4C0D1;border:1px solid #993556">Cursor CLI</div>
+    </div>
+    <div class="agent-card" style="--glow-color:#E24B4A;--glow-shadow:rgba(226,75,74,.2)">
+      <div class="name" style="color:#F7C1C1">Reaper</div>
+      <div class="role" style="color:#E8A0A0">evaluator</div>
+      <div class="desc">Runs eval commands, interprets raw output (logs, JSON, text), makes a binary cull-or-keep decision. An LLM agent that understands error profiles and trends, not a simple comparator.</div>
+      <div class="nature" style="background:#501313;color:#F7C1C1;border:1px solid #A32D2D">LLM agent</div>
+    </div>
+    <div class="agent-card" style="--glow-color:#5F5E5A;--glow-shadow:rgba(95,94,90,.2)">
+      <div class="name" style="color:#D3D1C7">Fossil</div>
+      <div class="role" style="color:#888780">historian</div>
+      <div class="desc">Passive log of all experiments: genome hash, phenotype score, eval output, diffs, lineage. Never signals, never decides. A database with a reporting layer. Wallace reads it.</div>
+      <div class="nature" style="background:#2C2C2A;color:#D3D1C7;border:1px solid #5F5E5A">SQLite</div>
+    </div>
+    <div class="agent-card" style="--glow-color:#EF9F27;--glow-shadow:rgba(239,159,39,.2)">
+      <div class="name" style="color:#FAC775">Hermes</div>
+      <div class="role" style="color:#D4A44F">migrator</div>
+      <div class="desc">Carries the fittest genome between islands. Fires rarely — isolation preserves diversity. Only in island topology. Named after the messenger god.</div>
+      <div class="nature" style="background:#412402;color:#FAC775;border:1px solid #854F0B">git ops</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ EVOLUTION GRAPH ════════ -->
+<div class="section">
+  <div class="section-title">Evolution Graph — Island Model</div>
+  <svg id="evo-graph" width="100%" viewBox="0 0 900 980" style="max-width:900px;margin:0 auto">
+    <defs>
+      <marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+        <path d="M1 1L9 5L1 9" fill="none" stroke="context-stroke" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+
+    <!-- Background stage bands -->
+    <rect x="60" y="860" width="780" height="60" rx="8" fill="#1D9E75" opacity=".04"/>
+    <rect x="60" y="700" width="780" height="155" rx="8" fill="#1D9E75" opacity=".03"/>
+    <rect x="60" y="500" width="780" height="195" rx="8" fill="#534AB7" opacity=".03"/>
+    <rect x="60" y="280" width="780" height="215" rx="8" fill="#D85A30" opacity=".03"/>
+    <rect x="60" y="80" width="780" height="195" rx="8" fill="#EF9F27" opacity=".04"/>
+
+    <!-- Stage labels -->
+    <text x="855" y="895" text-anchor="end" style="font-size:10px;fill:#1D9E75">stage 0 · smoke</text>
+    <text x="855" y="780" text-anchor="end" style="font-size:10px;fill:#1D9E75">stage 1 · proxy</text>
+    <text x="855" y="600" text-anchor="end" style="font-size:10px;fill:#7F77DD">stage 2 · capability</text>
+    <text x="855" y="390" text-anchor="end" style="font-size:10px;fill:#D85A30">stage 3 · blended</text>
+    <text x="855" y="180" text-anchor="end" style="font-size:10px;fill:#EF9F27">stage 4 · oracle</text>
+
+    <!-- Island boundaries -->
+    <rect x="80" y="100" width="320" height="830" rx="20" fill="#085041" opacity=".04" stroke="#1D9E75" stroke-width="1" stroke-dasharray="6 5"/>
+    <rect x="500" y="100" width="320" height="830" rx="20" fill="#26215C" opacity=".04" stroke="#7F77DD" stroke-width="1" stroke-dasharray="6 5"/>
+    <text x="240" y="95" text-anchor="middle" style="font-size:11px;fill:#1D9E75;font-weight:500">Island A</text>
+    <text x="660" y="95" text-anchor="middle" style="font-size:11px;fill:#7F77DD;font-weight:500">Island B</text>
+
+    <!-- ═══ p0 SEED ═══ -->
+    <circle cx="450" cy="920" r="18" fill="#2C2C2A" stroke="#888780" stroke-width="2"/>
+    <text x="450" y="924" text-anchor="middle" style="font-size:12px;font-weight:600;fill:#D3D1C7" dominant-baseline="central">p0</text>
+    <text x="450" y="950" text-anchor="middle" style="font-size:10px;fill:#888780">pangea · seed genome</text>
+
+    <!-- p0 → islands -->
+    <path d="M434 905 C380 880 270 870 220 855" fill="none" stroke="#888780" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#ah2)"/>
+    <path d="M466 905 C520 880 630 870 680 855" fill="none" stroke="#888780" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#ah2)"/>
+
+    <!-- ═══ ISLAND A ═══ -->
+    <!-- A lineage left (x=180) -->
+    <circle cx="180" cy="840" r="10" fill="#085041" stroke="#5DCAA5" stroke-width="1"/>
+    <text x="180" y="844" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#9FE1CB">A0</text>
+
+    <path d="M180 830 L180 788" fill="none" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <!-- dead end -->
+    <path d="M173 810 C155 798 140 790 133 783" fill="none" stroke="#5F5E5A" stroke-width="1" stroke-dasharray="3 4" marker-end="url(#ah2)"/>
+    <circle cx="130" cy="776" r="6" fill="#2C2C2A" stroke="#5F5E5A" stroke-width=".5" opacity=".5"/>
+    <text x="130" y="779" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#E24B4A">✕</text>
+
+    <circle cx="180" cy="772" r="10" fill="#0F6E56" stroke="#5DCAA5" stroke-width="1"/>
+    <text x="180" y="776" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#9FE1CB">A1</text>
+    <path d="M180 762 L180 718" fill="none" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <circle cx="180" cy="702" r="11" fill="#0F6E56" stroke="#9FE1CB" stroke-width="1.5"/>
+    <text x="180" y="706" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#E1F5EE">A2</text>
+    <text x="155" y="695" text-anchor="end" style="font-size:9px;fill:#5DCAA5">proxy+</text>
+    <path d="M180 691 L180 648" fill="none" stroke="#1D9E75" stroke-width="2" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <circle cx="180" cy="632" r="10" fill="#085041" stroke="#5DCAA5" stroke-width="1"/>
+    <text x="180" y="636" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#9FE1CB">A3</text>
+    <path d="M180 622 L180 578" fill="none" stroke="#1D9E75" stroke-width="2" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <!-- dead end -->
+    <path d="M173 600 C155 588 140 580 133 573" fill="none" stroke="#5F5E5A" stroke-width="1" stroke-dasharray="3 4" marker-end="url(#ah2)"/>
+    <circle cx="130" cy="566" r="6" fill="#2C2C2A" stroke="#5F5E5A" stroke-width=".5" opacity=".5"/>
+    <text x="130" y="569" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#E24B4A">✕</text>
+
+    <circle cx="180" cy="562" r="12" fill="#085041" stroke="#9FE1CB" stroke-width="2"/>
+    <text x="180" y="566" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#E1F5EE">A5</text>
+    <text x="154" y="554" text-anchor="end" style="font-size:9px;fill:#5DCAA5">optimizer</text>
+
+    <!-- A lineage right (x=290) -->
+    <circle cx="290" cy="840" r="10" fill="#085041" stroke="#5DCAA5" stroke-width="1"/>
+    <text x="290" y="844" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#9FE1CB">a0</text>
+    <path d="M290 830 L290 788" fill="none" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <circle cx="290" cy="772" r="10" fill="#085041" stroke="#5DCAA5" stroke-width="1"/>
+    <text x="290" y="776" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#9FE1CB">a1</text>
+    <path d="M290 762 L290 718" fill="none" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <circle cx="290" cy="702" r="10" fill="#0F6E56" stroke="#5DCAA5" stroke-width="1"/>
+    <text x="290" y="706" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#9FE1CB">a2</text>
+    <path d="M290 692 L290 648" fill="none" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <!-- dead end off a2 -->
+    <path d="M298 688 C315 674 328 665 335 658" fill="none" stroke="#5F5E5A" stroke-width="1" stroke-dasharray="3 4" marker-end="url(#ah2)"/>
+    <circle cx="338" cy="651" r="6" fill="#2C2C2A" stroke="#5F5E5A" stroke-width=".5" opacity=".5"/>
+    <text x="338" y="654" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#E24B4A">✕</text>
+
+    <circle cx="290" cy="632" r="10" fill="#085041" stroke="#9FE1CB" stroke-width="1.5"/>
+    <text x="290" y="636" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#E1F5EE">a4</text>
+    <text x="310" y="624" style="font-size:9px;fill:#5DCAA5">arch</text>
+
+    <!-- Cupid merge in Island A: A5 × a4 → AC -->
+    <path d="M188 550 C200 530 218 510 225 500" fill="none" stroke="#D4537E" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ah2)"/>
+    <path d="M290 620 C280 590 250 520 236 500" fill="none" stroke="#D4537E" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ah2)"/>
+    <polygon points="230,478 244,494 230,510 216,494" fill="#72243E" stroke="#ED93B1" stroke-width="1.5"/>
+    <text x="200" y="492" text-anchor="end" style="font-size:9px;fill:#D4537E">Cupid</text>
+
+    <path d="M230 478 L230 445" fill="none" stroke="#1D9E75" stroke-width="2" marker-end="url(#ah2)"/>
+    <circle cx="230" cy="428" r="12" fill="#04342C" stroke="#9FE1CB" stroke-width="2"/>
+    <text x="230" y="432" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#9FE1CB">AC</text>
+    <text x="205" y="420" text-anchor="end" style="font-size:9px;fill:#5DCAA5">2.24</text>
+
+    <path d="M230 416 L230 375" fill="none" stroke="#1D9E75" stroke-width="2" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <!-- dead end off AC lineage -->
+    <path d="M238 395 C252 384 262 378 268 371" fill="none" stroke="#5F5E5A" stroke-width="1" stroke-dasharray="3 4" marker-end="url(#ah2)"/>
+    <circle cx="271" cy="364" r="6" fill="#2C2C2A" stroke="#5F5E5A" stroke-width=".5" opacity=".5"/>
+    <text x="271" y="367" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#E24B4A">✕</text>
+
+    <!-- A★ island champion -->
+    <circle cx="230" cy="358" r="14" fill="#04342C" stroke="#9FE1CB" stroke-width="2.5"/>
+    <text x="230" y="362" text-anchor="middle" dominant-baseline="central" style="font-size:10px;fill:#E1F5EE">A★</text>
+    <text x="206" y="348" text-anchor="end" style="font-size:10px;fill:#EF9F27;font-weight:500">2.21</text>
+
+    <!-- ═══ ISLAND B ═══ -->
+    <!-- B lineage left (x=600) -->
+    <circle cx="600" cy="840" r="10" fill="#3C3489" stroke="#AFA9EC" stroke-width="1"/>
+    <text x="600" y="844" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#EEEDFE">B0</text>
+    <path d="M600 830 L600 788" fill="none" stroke="#7F77DD" stroke-width="1.5" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <circle cx="600" cy="772" r="10" fill="#534AB7" stroke="#AFA9EC" stroke-width="1"/>
+    <text x="600" y="776" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#EEEDFE">B1</text>
+    <path d="M600 762 L600 718" fill="none" stroke="#7F77DD" stroke-width="1.5" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <!-- dead end -->
+    <path d="M607 748 C625 735 638 726 644 718" fill="none" stroke="#5F5E5A" stroke-width="1" stroke-dasharray="3 4" marker-end="url(#ah2)"/>
+    <circle cx="647" cy="711" r="6" fill="#2C2C2A" stroke="#5F5E5A" stroke-width=".5" opacity=".5"/>
+    <text x="647" y="714" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#E24B4A">✕</text>
+
+    <circle cx="600" cy="702" r="11" fill="#534AB7" stroke="#AFA9EC" stroke-width="1.5"/>
+    <text x="600" y="706" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#EEEDFE">B2</text>
+    <text x="618" y="694" style="font-size:9px;fill:#AFA9EC">proxy+</text>
+    <path d="M600 691 L600 648" fill="none" stroke="#7F77DD" stroke-width="2" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <circle cx="600" cy="632" r="10" fill="#26215C" stroke="#AFA9EC" stroke-width="1"/>
+    <text x="600" y="636" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#EEEDFE">B3</text>
+    <path d="M600 622 L600 578" fill="none" stroke="#7F77DD" stroke-width="2" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <circle cx="600" cy="562" r="12" fill="#26215C" stroke="#AFA9EC" stroke-width="2"/>
+    <text x="600" y="566" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#CECBF6">B5</text>
+    <text x="618" y="554" style="font-size:9px;fill:#7F77DD">lr sched</text>
+
+    <!-- B lineage right (x=730) -->
+    <circle cx="730" cy="840" r="10" fill="#3C3489" stroke="#AFA9EC" stroke-width="1"/>
+    <text x="730" y="844" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#EEEDFE">b0</text>
+    <path d="M730 830 L730 788" fill="none" stroke="#7F77DD" stroke-width="1.5" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <circle cx="730" cy="772" r="10" fill="#3C3489" stroke="#AFA9EC" stroke-width="1"/>
+    <text x="730" y="776" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#EEEDFE">b1</text>
+
+    <!-- dead end off b1 -->
+    <path d="M738 765 C755 752 768 743 774 736" fill="none" stroke="#5F5E5A" stroke-width="1" stroke-dasharray="3 4" marker-end="url(#ah2)"/>
+    <circle cx="777" cy="729" r="6" fill="#2C2C2A" stroke="#5F5E5A" stroke-width=".5" opacity=".5"/>
+    <text x="777" y="732" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#E24B4A">✕</text>
+
+    <path d="M730 762 L730 718" fill="none" stroke="#7F77DD" stroke-width="1.5" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <circle cx="730" cy="702" r="10" fill="#534AB7" stroke="#AFA9EC" stroke-width="1"/>
+    <text x="730" y="706" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#EEEDFE">b2</text>
+    <path d="M730 692 L730 648" fill="none" stroke="#7F77DD" stroke-width="2" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <circle cx="730" cy="632" r="10" fill="#26215C" stroke="#AFA9EC" stroke-width="1.5"/>
+    <text x="730" y="636" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#CECBF6">b4</text>
+    <text x="748" y="624" style="font-size:9px;fill:#7F77DD">arch</text>
+
+    <!-- Cupid merge in Island B: B5 × b4 → BC -->
+    <path d="M607 550 C618 530 638 510 645 500" fill="none" stroke="#D4537E" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ah2)"/>
+    <path d="M730 620 C720 590 680 520 665 500" fill="none" stroke="#D4537E" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ah2)"/>
+    <polygon points="655,478 669,494 655,510 641,494" fill="#72243E" stroke="#ED93B1" stroke-width="1.5"/>
+    <text x="685" y="492" style="font-size:9px;fill:#D4537E">Cupid</text>
+
+    <path d="M655 478 L655 445" fill="none" stroke="#7F77DD" stroke-width="2" marker-end="url(#ah2)"/>
+    <circle cx="655" cy="428" r="12" fill="#1a0a3a" stroke="#AFA9EC" stroke-width="2"/>
+    <text x="655" y="432" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#CECBF6">BC</text>
+    <text x="676" y="420" style="font-size:9px;fill:#7F77DD">2.22</text>
+
+    <path d="M655 416 L655 375" fill="none" stroke="#7F77DD" stroke-width="2" stroke-dasharray="7 4" class="anim-flow" marker-end="url(#ah2)"/>
+
+    <!-- B★ island champion -->
+    <circle cx="655" cy="358" r="14" fill="#1a0a3a" stroke="#AFA9EC" stroke-width="2.5"/>
+    <text x="655" y="362" text-anchor="middle" dominant-baseline="central" style="font-size:10px;fill:#CECBF6">B★</text>
+    <text x="678" y="348" style="font-size:10px;fill:#EF9F27;font-weight:500">2.19</text>
+
+    <!-- ═══ HERMES MIGRATION ═══ -->
+    <path d="M290 632 C380 610 460 610 580 632" fill="none" stroke="#EF9F27" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#ah2)" class="anim-flow"/>
+    <text x="440" y="604" text-anchor="middle" style="font-size:10px;fill:#EF9F27;font-weight:500">Hermes</text>
+    <text x="440" y="618" text-anchor="middle" style="font-size:9px;fill:#888780">best A migrant → Island B</text>
+
+    <!-- ═══ GRAND TOURNAMENT ═══ -->
+    <text x="450" y="290" text-anchor="middle" style="font-size:10px;fill:#888780">Darwin · grand tournament</text>
+    <line x1="240" y1="295" x2="380" y2="295" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>
+    <line x1="520" y1="295" x2="660" y2="295" stroke="rgba(255,255,255,.06)" stroke-width=".5"/>
+
+    <path d="M240 346 C300 310 390 280 430 264" fill="none" stroke="#1D9E75" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#ah2)"/>
+    <path d="M645 346 C600 310 510 280 470 264" fill="none" stroke="#7F77DD" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#ah2)"/>
+
+    <!-- Grand merge diamond -->
+    <polygon points="450,236 472,256 450,276 428,256" fill="#0d0518" stroke="#EF9F27" stroke-width="2"/>
+
+    <path d="M450 236 L450 200" fill="none" stroke="#EF9F27" stroke-width="2" marker-end="url(#ah2)"/>
+
+    <!-- Post-merge -->
+    <circle cx="450" cy="182" r="12" fill="#0d0518" stroke="#EF9F27" stroke-width="1.5"/>
+    <text x="450" y="186" text-anchor="middle" dominant-baseline="central" style="font-size:9px;fill:#FAC775">AB</text>
+    <text x="476" y="178" style="font-size:9px;fill:#EF9F27">2.16</text>
+
+    <path d="M450 170 L450 140" fill="none" stroke="#EF9F27" stroke-width="2" marker-end="url(#ah2)"/>
+
+    <!-- Champion -->
+    <circle cx="450" cy="120" r="18" fill="#0d0518" stroke="#EF9F27" stroke-width="2.5" class="anim-glow"/>
+    <text x="450" y="124" text-anchor="middle" dominant-baseline="central" style="font-size:12px;font-weight:600;fill:#FAC775">best</text>
+    <text x="450" y="146" text-anchor="middle" style="font-size:11px;fill:#EF9F27;font-weight:500">2.14 bpb</text>
+
+    <!-- Upward fade -->
+    <line x1="450" y1="102" x2="450" y2="82" stroke="#EF9F27" stroke-width="1" stroke-dasharray="2 5" opacity=".3"/>
+    <circle cx="450" cy="78" r="2" fill="#EF9F27" opacity=".25"/>
+
+    <!-- Legend -->
+    <g transform="translate(80,960)">
+      <line x1="0" y1="0" x2="24" y2="0" stroke="#1D9E75" stroke-width="2" stroke-dasharray="7 4"/>
+      <circle cx="12" cy="0" r="4" fill="#085041" stroke="#5DCAA5" stroke-width="1"/>
+      <text x="30" y="4" style="font-size:10px;fill:#888780">Island A</text>
+
+      <line x1="120" y1="0" x2="144" y2="0" stroke="#7F77DD" stroke-width="2" stroke-dasharray="7 4"/>
+      <circle cx="132" cy="0" r="4" fill="#26215C" stroke="#AFA9EC" stroke-width="1"/>
+      <text x="150" y="4" style="font-size:10px;fill:#888780">Island B</text>
+
+      <line x1="240" y1="0" x2="264" y2="0" stroke="#5F5E5A" stroke-width="1" stroke-dasharray="3 4"/>
+      <circle cx="252" cy="0" r="4" fill="#2C2C2A" stroke="#5F5E5A" stroke-width=".5" opacity=".6"/>
+      <text x="270" y="4" style="font-size:10px;fill:#888780">dead end</text>
+
+      <polygon points="360,-6 370,1 360,8 350,1" fill="#72243E" stroke="#ED93B1" stroke-width="1.2"/>
+      <text x="378" y="4" style="font-size:10px;fill:#888780">Cupid merge</text>
+
+      <line x1="480" y1="0" x2="504" y2="0" stroke="#EF9F27" stroke-width="2" stroke-dasharray="6 4"/>
+      <text x="510" y="4" style="font-size:10px;fill:#888780">Hermes</text>
+
+      <polygon points="580,-6 590,1 580,8 570,1" fill="#0d0518" stroke="#EF9F27" stroke-width="1.5"/>
+      <text x="598" y="4" style="font-size:10px;fill:#888780">tournament</text>
+    </g>
+  </svg>
+</div>
+
+<!-- ════════ EVAL SCHEDULE ════════ -->
+<div class="section">
+  <div class="section-title">Eval Schedule — Reaper's Curriculum</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:900px">
+    <div class="eval-stages">
+      <div class="eval-stage" style="border-color:#444441;background:#1e1e1c;color:#B4B2A9">
+        <div class="stage-name">Stage 0 · Smoke Test</div>
+        <div class="stage-desc">Does it run? Is the output valid? Binary pass/fail.</div>
+        <div class="stage-trigger">trigger next → always</div>
+      </div>
+      <div class="eval-stage" style="border-color:#1D9E75;background:#04302a;color:#9FE1CB">
+        <div class="stage-name">Stage 1 · Proxy Sprint</div>
+        <div class="stage-desc">10–50 curated examples. High noise, fast iteration. Broad exploration.</div>
+        <div class="stage-trigger">trigger next → convergence detected by Wallace</div>
+      </div>
+      <div class="eval-stage" style="border-color:#534AB7;background:#1e1430;color:#CECBF6">
+        <div class="stage-name">Stage 2 · Capability Unlocks</div>
+        <div class="stage-desc">Narrow high-fidelity evals added sequentially. Tests specific capabilities.</div>
+        <div class="stage-trigger">trigger next → per-capability convergence</div>
+      </div>
+    </div>
+    <div class="eval-stages">
+      <div class="eval-stage" style="border-color:#993C1D;background:#2a1008;color:#F5C4B3">
+        <div class="stage-name">Stage 3 · Blended Pressure</div>
+        <div class="stage-desc">Multi-objective weighted scoring. Pareto frontier tracking.</div>
+        <div class="stage-trigger">trigger next → Pareto front stable</div>
+      </div>
+      <div class="eval-stage" style="border-color:#854F0B;background:#1e1002;color:#FAC775">
+        <div class="stage-name">Stage 4 · Integration Oracle</div>
+        <div class="stage-desc">Full benchmark. Expensive. Run on top-K survivors only.</div>
+        <div class="stage-trigger">trigger next → grand tournament</div>
+      </div>
+      <div class="eval-stage" style="border-color:#993556;background:#28101a;color:#F4C0D1">
+        <div class="stage-name">Stage 5 · Human Loop <span style="opacity:.5">(optional)</span></div>
+        <div class="stage-desc">Aesthetics, edge cases, non-automatable dimensions.</div>
+        <div class="stage-trigger">Fossil surfaces candidates to human scorer</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ VOCABULARY + CONCEPTS ════════ -->
+<div class="section">
+  <div class="section-title">Vocabulary &amp; Concepts</div>
+  <div class="info-row">
+    <div class="info-panel">
+      <div class="panel-title" style="color:#9FE1CB">The Things</div>
+      <div class="item"><b>Genome</b> — the code repo being optimised. What Mendel edits, what Cupid splices.</div>
+      <div class="item"><b>Phenotype</b> — the running system. What Reaper evaluates. The expressed result.</div>
+      <div class="item"><b>p0</b> — the root commit. The primordial genome. Where everything begins.</div>
+    </div>
+    <div class="info-panel">
+      <div class="panel-title" style="color:#AFA9EC">The Topology</div>
+      <div class="item"><b>Island</b> — an isolated population evolving independently. Each has its own Mendel, Cupid, Reaper.</div>
+      <div class="item"><b>Pangea</b> — conceptually, the moment before islands diverge. The unified state.</div>
+      <div class="item"><b>Migration</b> — Hermes carries fittest genome across islands. Rare and precious.</div>
+    </div>
+    <div class="info-panel">
+      <div class="panel-title" style="color:#F5C4B3">The Git Mapping</div>
+      <div class="item"><b>Mutation</b> → Mendel's commit</div>
+      <div class="item"><b>Crossover</b> → Cupid's merge commit</div>
+      <div class="item"><b>Dead end</b> → git revert</div>
+      <div class="item"><b>Migration</b> → Hermes cherry-pick across islands</div>
+      <div class="item"><b>Selection</b> → Reaper cull + Wallace tournament</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ MAIN LOOP ════════ -->
+<div class="section">
+  <div class="section-title">The Loop</div>
+  <svg width="100%" viewBox="0 0 800 120" style="max-width:800px">
+    <defs>
+      <marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+        <path d="M1 1L9 5L1 9" fill="none" stroke="context-stroke" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </marker>
+    </defs>
+
+    <!-- Boxes -->
+    <rect x="10" y="30" width="90" height="50" rx="10" fill="#26215C" stroke="#534AB7" stroke-width="1"/>
+    <text x="55" y="52" text-anchor="middle" style="font-size:11px;fill:#CECBF6;font-weight:500">Wallace</text>
+    <text x="55" y="66" text-anchor="middle" style="font-size:9px;fill:#AFA9EC">pick genome</text>
+
+    <path d="M100 55 L140 55" fill="none" stroke="#534AB7" stroke-width="1.5" marker-end="url(#ah3)"/>
+
+    <rect x="145" y="30" width="100" height="50" rx="10" fill="#085041" stroke="#1D9E75" stroke-width="1"/>
+    <text x="195" y="52" text-anchor="middle" style="font-size:11px;fill:#9FE1CB;font-weight:500">Mendel</text>
+    <text x="195" y="66" text-anchor="middle" style="font-size:9px;fill:#5DCAA5">mutate</text>
+
+    <path d="M245 55 L280 55" fill="none" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#ah3)"/>
+
+    <rect x="285" y="30" width="90" height="50" rx="10" fill="#04342C" stroke="#5DCAA5" stroke-width="1"/>
+    <text x="330" y="52" text-anchor="middle" style="font-size:11px;fill:#9FE1CB;font-weight:500">Genome</text>
+    <text x="330" y="66" text-anchor="middle" style="font-size:9px;fill:#5DCAA5">commit</text>
+
+    <path d="M375 55 L410 55" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#ah3)"/>
+    <text x="393" y="48" text-anchor="middle" style="font-size:8px;fill:#888780">run</text>
+
+    <rect x="415" y="30" width="100" height="50" rx="10" fill="#2a1008" stroke="#D85A30" stroke-width="1"/>
+    <text x="465" y="52" text-anchor="middle" style="font-size:11px;fill:#F5C4B3;font-weight:500">Phenotype</text>
+    <text x="465" y="66" text-anchor="middle" style="font-size:9px;fill:#D85A30">eval output</text>
+
+    <path d="M515 55 L550 55" fill="none" stroke="#D85A30" stroke-width="1.5" marker-end="url(#ah3)"/>
+
+    <rect x="555" y="30" width="90" height="50" rx="10" fill="#501313" stroke="#E24B4A" stroke-width="1"/>
+    <text x="600" y="52" text-anchor="middle" style="font-size:11px;fill:#F7C1C1;font-weight:500">Reaper</text>
+    <text x="600" y="66" text-anchor="middle" style="font-size:9px;fill:#E8A0A0">score</text>
+
+    <path d="M645 55 L680 55" fill="none" stroke="#E24B4A" stroke-width="1.5" marker-end="url(#ah3)"/>
+
+    <rect x="685" y="30" width="90" height="50" rx="10" fill="#2C2C2A" stroke="#5F5E5A" stroke-width="1"/>
+    <text x="730" y="52" text-anchor="middle" style="font-size:11px;fill:#D3D1C7;font-weight:500">Fossil</text>
+    <text x="730" y="66" text-anchor="middle" style="font-size:9px;fill:#888780">log</text>
+
+    <!-- Return arrow -->
+    <path d="M730 80 C730 105 55 105 55 80" fill="none" stroke="#534AB7" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#ah3)"/>
+    <text x="400" y="108" text-anchor="middle" style="font-size:9px;fill:#AFA9EC">Wallace reads Fossil → next iteration</text>
+  </svg>
+</div>
+
+<!-- ════════ CLI ════════ -->
+<div class="section">
+  <div class="section-title">CLI Commands</div>
+  <div class="cli-grid">
+    <div class="cli-cmd"><div class="cmd">gene init [path]</div><div class="explain">Interactive setup. Creates GENEHIVE.md config.</div></div>
+    <div class="cli-cmd"><div class="cmd">gene check [path]</div><div class="explain">Validate eval command works. Show parsed scores.</div></div>
+    <div class="cli-cmd"><div class="cmd">gene start [path]</div><div class="explain">Start evolution as background daemon.</div></div>
+    <div class="cli-cmd"><div class="cmd">gene watch [path]</div><div class="explain">TUI dashboard. Real-time monitoring.</div></div>
+    <div class="cli-cmd"><div class="cmd">gene stop [path]</div><div class="explain">Graceful shutdown + grand tournament.</div></div>
+    <div class="cli-cmd"><div class="cmd">gene status [path]</div><div class="explain">One-line summary. Generation, best score.</div></div>
+    <div class="cli-cmd"><div class="cmd">gene report [path]</div><div class="explain">Full Fossil log export as markdown.</div></div>
+  </div>
+</div>
+
+<!-- ════════ COMPARISON TABLE ════════ -->
+<div class="section">
+  <div class="section-title">Naive → Autoresearch → Genehive</div>
+  <div style="overflow-x:auto">
+  <table class="compare-table">
+    <tr>
+      <th style="width:20%"></th>
+      <th class="col-naive" style="width:26%">Naive (Cursor CLI)</th>
+      <th class="col-auto" style="width:26%">Autoresearch</th>
+      <th class="col-gene" style="width:28%">Genehive</th>
+    </tr>
+    <tr><td><b>Population</b></td><td class="col-naive">1, manual</td><td class="col-auto">1, autonomous</td><td class="col-gene">N islands × N lineages</td></tr>
+    <tr><td><b>Crossover</b></td><td class="col-naive">none</td><td class="col-auto">none</td><td class="col-gene">Cupid merge</td></tr>
+    <tr><td><b>Topology</b></td><td class="col-naive">none</td><td class="col-auto">single thread</td><td class="col-gene">island model</td></tr>
+    <tr><td><b>Eval</b></td><td class="col-naive">eyeballing</td><td class="col-auto">single fixed metric</td><td class="col-gene">staged curriculum</td></tr>
+    <tr><td><b>Scope</b></td><td class="col-naive">whatever</td><td class="col-auto">one file</td><td class="col-gene">full repo</td></tr>
+    <tr><td><b>Domain</b></td><td class="col-naive">whatever</td><td class="col-auto">ML training only</td><td class="col-gene">general framework</td></tr>
+    <tr><td><b>History</b></td><td class="col-naive">chat context</td><td class="col-auto">experiment log</td><td class="col-gene">Fossil — structured, convergence-aware</td></tr>
+    <tr><td><b>Execution</b></td><td class="col-naive">manual</td><td class="col-auto">custom agent</td><td class="col-gene">pluggable — Cursor / Claude Code</td></tr>
+    <tr><td><b>Budget</b></td><td class="col-naive">none</td><td class="col-auto">none</td><td class="col-gene">exact tracking + warnings</td></tr>
+  </table>
+  </div>
+</div>
+
+<!-- ════════ IMPLEMENTATION STACK ════════ -->
+<div class="section">
+  <div class="section-title">Implementation Stack</div>
+  <div class="info-row" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">
+    <div class="info-panel" style="text-align:center">
+      <div class="panel-title" style="color:#9FE1CB">Language</div>
+      <div style="font-size:22px;margin:8px 0">Python 3.11+</div>
+    </div>
+    <div class="info-panel" style="text-align:center">
+      <div class="panel-title" style="color:#AFA9EC">Database</div>
+      <div style="font-size:22px;margin:8px 0">SQLite</div>
+      <div style="font-size:10px;color:#888780">WAL mode for concurrency</div>
+    </div>
+    <div class="info-panel" style="text-align:center">
+      <div class="panel-title" style="color:#F5C4B3">Execution</div>
+      <div style="font-size:22px;margin:8px 0">Cursor CLI</div>
+      <div style="font-size:10px;color:#888780">headless --yolo -p</div>
+    </div>
+    <div class="info-panel" style="text-align:center">
+      <div class="panel-title" style="color:#FAC775">Version Control</div>
+      <div style="font-size:22px;margin:8px 0">Git Worktrees</div>
+      <div style="font-size:10px;color:#888780">~/.genehive/workspaces/</div>
+    </div>
+    <div class="info-panel" style="text-align:center">
+      <div class="panel-title" style="color:#F4C0D1">Config</div>
+      <div style="font-size:22px;margin:8px 0">GENEHIVE.md</div>
+      <div style="font-size:10px;color:#888780">git-committable, single file</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ BUDGET ════════ -->
+<div class="section">
+  <div class="section-title">Budget Control</div>
+  <div class="info-row" style="grid-template-columns:1fr 1fr">
+    <div class="info-panel">
+      <div class="panel-title" style="color:#FAC775">Execution Engine: Claude Code</div>
+      <div class="item"><b>Exact tracking</b> — <code>total_cost_usd</code> in JSON output per call</div>
+      <div class="item"><b>Per-model breakdown</b> — <code>modelUsage</code> with input/output/cache tokens</div>
+      <div class="item"><b>Session continuity</b> via <code>--resume</code></div>
+      <div class="item"><b>Bare mode</b> — deterministic, no config leakage</div>
+    </div>
+    <div class="info-panel">
+      <div class="panel-title" style="color:#E8A0A0">Safety Features</div>
+      <div class="item"><b>Budget limits</b> — dollars and/or wall-clock hours</div>
+      <div class="item"><b>80% warning</b> — prominent alert in gene watch</div>
+      <div class="item"><b>Graceful exit</b> — completes generation, runs tournament, writes champion</div>
+      <div class="item"><b>No budget = big warning</b> — explicit opt-in to unlimited spending</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ FOOTER ════════ -->
+<div style="text-align:center;margin-top:48px;padding:24px 0;border-top:1px solid var(--border)">
+  <div style="font-size:12px;color:#888780">gene pool meets hive mind — autonomous codebase evolution</div>
+  <div style="font-size:10px;color:#5F5E5A;margin-top:4px">inspired by Karpathy's autoresearch · grounded in evolutionary graph theory</div>
+</div>
+
+</div><!-- /container -->
+
+<script>
+const tip = document.getElementById('tip');
+document.querySelectorAll('[data-tip]').forEach(el => {
+  el.addEventListener('mouseenter', e => {
+    tip.textContent = el.getAttribute('data-tip');
+    tip.classList.add('visible');
+  });
+  el.addEventListener('mousemove', e => {
+    const x = Math.min(e.clientX + 16, window.innerWidth - 280);
+    const y = e.clientY + 16;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  });
+  el.addEventListener('mouseleave', () => {
+    tip.classList.remove('visible');
+  });
+});
+</script>
+</body>
+</html>
